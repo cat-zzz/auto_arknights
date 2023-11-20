@@ -229,7 +229,7 @@ class AutoArknights:
         self.adb_cmd.start_arknights()
         time.sleep(3)
         # 2 进入主菜单
-        self.continue_action(src,des,)
+        # self.continue_action(src,des,)
 
     def main(self):
         # 1. 打开明日方舟
@@ -238,6 +238,7 @@ class AutoArknights:
 
 
 def return_home():
+    pass
 
 
 if __name__ == '__main__':
