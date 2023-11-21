@@ -62,7 +62,7 @@ class AdbCmd:
     def screen_capture_save(self, filename):
         # subprocess.check_output(self.path + 'adb exec-out screencap -p > C:\\sc.png')
         subprocess.run(self.adb_path + 'adb shell screencap -p /sdcard/' + filename, shell=True)
-        subprocess.run(self.adb_path + 'adb pull /sdcard/' + filename + ' ./auto_arknights/' + filename, shell=True)
+        subprocess.run(self.adb_path + 'adb pull /sdcard/' + filename + ' ./auto_arknights2/' + filename, shell=True)
         # subprocess.run(self.path + 'adb shell rm -f /sdcard/' + filename, shell=True)
         print('adbcmd: 截图操作')
 
@@ -102,7 +102,7 @@ class Image:
 
 
 class MatchImg(object):
-    def __init__(self, source, template, similarity=0.80):
+    def __init__(self, source=None, template=None, similarity=0.80):
         """
         匹配一个图片是否是另一个图片的局部图。source是大图，template是小图。即判断小图是否是大图的一部分。
         :param similarity: 匹配程度，值越大，匹配程度越高
@@ -161,7 +161,8 @@ class MatchImg(object):
 def load_image_file(path):
     path = Path(path)
     if not path.exists():
-        print('not exist file')
+        print('load_image_file(): not exist file')
+
     try:
         image = Image(str(path))
         return image
@@ -172,12 +173,14 @@ def load_image_file(path):
 class ActionType(Enum):
     NO_ACTION = 1
     CLICK = 2
+    CLICK_CENTER = 3  # 点击屏幕中间
 
 
 class AutoArknights:
     def __init__(self):
         self.save_screen_path = './auto_arknights2/'  # 保存匹配截图
         self.adb_cmd = AdbCmd()
+        self.match_img = MatchImg()
         self.width, self.height = self.adb_cmd.get_screen_size()
         self.points = None
 
@@ -188,10 +191,12 @@ class AutoArknights:
     def take_action(self, action: ActionType):
         if action == ActionType.CLICK:
             self.adb_cmd.click(self.points[0][0], self.points[0][1])
+        elif action == ActionType.CLICK_CENTER:
+            self.adb_cmd.click(self.width / 2, self.height / 2)
         else:
             pass
 
-    def continue_action(self, src, des, action1=ActionType.NO_ACTION, action2=ActionType.NO_ACTION,
+    def continue_action(self, src_path, des_path, action1=ActionType.NO_ACTION, action2=ActionType.NO_ACTION,
                         flag=Flag.SATISFY_CONDITION):
         """
         对应两种情况（通过flag标识是哪种情况）
@@ -201,19 +206,16 @@ class AutoArknights:
         """
         i = 0
         while i < 100:  # 最多循环100次
-            self.adb_cmd.screen_capture_save(src)
-            src1 = load_image_file(self.save_screen_path + src)
-            des1 = load_image_file(self.save_screen_path + des)
-            process = MatchImg(src1, des1)
-            self.points = process.get_img_center()  # src图片中每个des图片的中心坐标
-            if flag == self.Flag.SATISFY_CONDITION:  # 满足条件一直执行action1，直到不满足条件为止
-                if self.points is not None and len(self.points) > 0:  # 满足条件
+            self.adb_cmd.screen_capture_save(src_path)
+            is_match_flag = self.is_match(src_path, des_path)
+            if flag == self.Flag.SATISFY_CONDITION:
+                if is_match_flag:
                     self.take_action(action1)
                 else:
                     self.take_action(action2)
                     return True
             elif flag == self.Flag.NO_SATISFY_CONDITION:
-                if self.points is None or len(self.points) == 0:  # 不满足条件
+                if not is_match_flag:
                     self.take_action(action1)
                 else:
                     self.take_action(action2)
@@ -224,16 +226,66 @@ class AutoArknights:
             i += 1
         return False
 
-    def enter(self):
+    def continue_several_action(self, src_path, des_path, cond_paths, des_action=ActionType.NO_ACTION,
+                                cond_action=ActionType.CLICK, default_action=ActionType.NO_ACTION):
+        # 如果和目标匹配，则执行完毕（只有这一种情况函数才会执行完成，其他情况都会一直循环判断）
+        # 否则，判断和哪个条件匹配，就执行该条件对应的动作，此时仍会继续循环判断
+        # 如果都不符合，执行默认动作
+        i = 0
+        while i < 100:
+            self.adb_cmd.screen_capture_save(src_path)
+            is_match_flag = self.is_match(src_path, des_path)
+            if is_match_flag:  # 判断和目标des_path是否匹配
+                self.take_action(des_action)
+                break
+            else:
+                cond_flag = 0
+                # 依次判断和cond_paths里的条件是否符合，如果有多个符合的条件，只会执行最靠前的那个条件
+                for j, cond_path in enumerate(cond_paths):
+                    is_match_flag = self.is_match(src_path, cond_path)
+                    if is_match_flag:
+                        self.take_action(cond_action)
+                        cond_flag = 1
+                        break
+                # 和cond_paths里的任一条件都不符合，则执行默认动作
+                if cond_flag == 0:
+                    self.take_action(default_action)
+            time.sleep(1)
+            i += 1
+
+    def is_match(self, src_path, des_path):
+        src = load_image_file(self.save_screen_path + src_path)
+        des = load_image_file(self.save_screen_path + des_path)
+        self.match_img.set_images(src, des)
+        self.points = self.match_img.get_img_center()
+        if self.points is not None and len(self.points) > 0:
+            return True
+        else:
+            return False
+
+    def enter_game(self):
         # 1 启动app
         self.adb_cmd.start_arknights()
+        print('启动明日方舟')
         time.sleep(3)
         # 2 进入主菜单
-        # self.continue_action(src,des,)
+        # 2.1 点击”开始唤醒“
+        src = 'ark_start_btn_1.png'
+        des = 'ark_btn_start.png'
+        self.continue_action(src, des, action1=ActionType.CLICK_CENTER, action2=ActionType.CLICK,
+                             flag=self.Flag.NO_SATISFY_CONDITION)
+        print('点击‘开始唤醒’按钮')
+        # 2.2 判断是否成功进入主菜单，并关闭签到页、活动页
+        src = 'ark_home_1.png'
+        des = 'ark_home.png'
+        cond = ['ark_btn_quit.png']
+        self.continue_several_action(src, des, cond)
+        print('成功进入主菜单')
+
+    def update_build(self):
+        print('从主菜单进入基建')
 
     def main(self):
-        # 1. 打开明日方舟
-        #
         pass
 
 
@@ -242,4 +294,12 @@ def return_home():
 
 
 if __name__ == '__main__':
-    pass
+    auto = AutoArknights()
+    auto.enter_game()
+    # print(auto.is_match('ark_home_1.png', 'ark_btn_quit.png'))
+    # load_image_file('./auto_arknights2/ark_home.png')
+    # a = [1, 1, 1, 1, 1]
+    # j = 1
+    # for j, v in enumerate(a):
+    #     print(j, v)
+    # print('j', j)
