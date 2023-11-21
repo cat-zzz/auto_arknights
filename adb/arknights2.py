@@ -228,16 +228,20 @@ class AutoArknights:
 
     def continue_several_action(self, src_path, des_path, cond_paths, des_action=ActionType.NO_ACTION,
                                 cond_action=ActionType.CLICK, default_action=ActionType.NO_ACTION):
-        # 如果和目标匹配，则执行完毕（只有这一种情况函数才会执行完成，其他情况都会一直循环判断）
-        # 否则，判断和哪个条件匹配，就执行该条件对应的动作，此时仍会继续循环判断
-        # 如果都不符合，执行默认动作
+        """
+        如果和目标(des)匹配，则执行完毕（只有这一种情况函数才会执行完成，其他情况都会一直循环判断）
+        否则，判断和哪个条件匹配，就执行该条件对应的动作，此时仍会继续循环判断
+        如果都不符合，执行默认动作
+        :return: 循环判断100次(每次间隔1秒)，其中一旦和目标匹配，返回True；否则，返回False
+        """
+
         i = 0
         while i < 100:
             self.adb_cmd.screen_capture_save(src_path)
             is_match_flag = self.is_match(src_path, des_path)
             if is_match_flag:  # 判断和目标des_path是否匹配
                 self.take_action(des_action)
-                break
+                return True
             else:
                 cond_flag = 0
                 # 依次判断和cond_paths里的条件是否符合，如果有多个符合的条件，只会执行最靠前的那个条件
@@ -252,6 +256,7 @@ class AutoArknights:
                     self.take_action(default_action)
             time.sleep(1)
             i += 1
+        return False
 
     def is_match(self, src_path, des_path):
         src = load_image_file(self.save_screen_path + src_path)
@@ -277,13 +282,44 @@ class AutoArknights:
         print('点击‘开始唤醒’按钮')
         # 2.2 判断是否成功进入主菜单，并关闭签到页、活动页
         src = 'ark_home_1.png'
-        des = 'ark_home.png'
+        des = 'ark_tmpl_home.png'
         cond = ['ark_btn_quit.png']
         self.continue_several_action(src, des, cond)
         print('成功进入主菜单')
 
     def update_build(self):
-        print('从主菜单进入基建')
+        """
+        从主菜单页面进入基建并更换干员，但是只能从主菜单进入基建
+        """
+        print('正在从主菜单进入基建...')
+        src = 'ark_build.png'
+        des = 'ark_tmpl_build.png'
+        cond = ['ark_btn_build.png']
+        flag = self.continue_several_action(src, des, cond)
+        if not flag:
+            print('进入基建失败')
+            return
+        print('成功进入基建')
+        # 领收益
+        src = 'ark_build_reward.png'
+        des = 'ark_btn_build_notification.png'
+        self.adb_cmd.screen_capture_save(src)
+        flag = self.is_match(src, des)
+        if flag:
+            print('有基建通知图标')
+            des = 'ark_btn_make.png'
+            self.continue_action(src, des, action1=ActionType.CLICK, flag=self.Flag.SATISFY_CONDITION)
+            print('制造站收取完成')
+            des = 'ark_btn_trade.png'
+            self.continue_action(src, des, action1=ActionType.CLICK, flag=self.Flag.SATISFY_CONDITION)
+            print('贸易站收取完成')
+            des = 'ark_btn_trust.png'
+            self.continue_action(src, des, action1=ActionType.CLICK, flag=self.Flag.SATISFY_CONDITION)
+            print('干员信赖收取完成')
+        else:
+            print('无基建通知图标')
+        # todo 更换干员
+        print('正在更换干员')
 
     def main(self):
         pass

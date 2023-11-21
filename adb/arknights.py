@@ -14,7 +14,7 @@ class AdbCmd:
 
     def __init__(self):
         """初始化ADB,包括检查ADB是否正确安装，设备是否正确连接"""
-        self.path = 'C:\\cplay\\LDPlayer9\\'
+        self.path = 'D:\\Application\\LeiDian\\LDPlayer4.0\\'
         version = subprocess.check_output(self.path + 'adb version')
         if 'Android Debug Bridge version' in str(version):
             print('ADB安装正常')
