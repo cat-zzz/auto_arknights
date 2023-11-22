@@ -44,7 +44,8 @@ class AdbCmd:
     def swipe(self, x1=500, y1=1200, x2=500, y2=600):
         """滑动屏幕"""
         subprocess.check_output(
-            self.adb_path + 'adb shell input swipe ' + str(x1) + ' ' + str(y1) + ' ' + str(x2) + ' ' + str(y2))
+            self.adb_path + 'adb shell input swipe ' + str(x1) + ' ' + str(y1) + ' ' + str(x2) + ' ' + str(
+                y2) + ' 2000')
 
     def click_power(self):
         """点击电源键"""
@@ -64,7 +65,7 @@ class AdbCmd:
         subprocess.run(self.adb_path + 'adb shell screencap -p /sdcard/' + filename, shell=True)
         subprocess.run(self.adb_path + 'adb pull /sdcard/' + filename + ' ./auto_arknights2/' + filename, shell=True)
         # subprocess.run(self.path + 'adb shell rm -f /sdcard/' + filename, shell=True)
-        print('adbcmd: 截图操作')
+        # print('adbcmd: 截图操作')
 
     def get_screen_size(self):
         """
@@ -173,7 +174,9 @@ def load_image_file(path):
 class ActionType(Enum):
     NO_ACTION = 1
     CLICK = 2
-    CLICK_CENTER = 3  # 点击屏幕中间
+    CLICK_CENTER = 3  # 点击整个屏幕中间
+    CLICK_LAST = 4  # 点击self.points最后一个位置坐标
+    SWIPE_LAST_TO_FIRST = 5
 
 
 class AutoArknights:
@@ -193,6 +196,11 @@ class AutoArknights:
             self.adb_cmd.click(self.points[0][0], self.points[0][1])
         elif action == ActionType.CLICK_CENTER:
             self.adb_cmd.click(self.width / 2, self.height / 2)
+        elif action == ActionType.CLICK_LAST:
+            self.adb_cmd.click(self.points[-1][0], self.points[-1][1])
+        elif action == ActionType.SWIPE_LAST_TO_FIRST:
+            x1, y1, x2, y2 = self.points[0][0], self.points[0][1], self.points[-1][0], self.points[-1][1]
+            self.adb_cmd.swipe(x2, y2, x1, y1)
         else:
             pass
 
@@ -206,7 +214,7 @@ class AutoArknights:
         """
         i = 0
         while i < 100:  # 最多循环100次
-            self.adb_cmd.screen_capture_save(src_path)
+            # self.adb_cmd.screen_capture_save(src_path)
             is_match_flag = self.is_match(src_path, des_path)
             if flag == self.Flag.SATISFY_CONDITION:
                 if is_match_flag:
@@ -237,7 +245,7 @@ class AutoArknights:
 
         i = 0
         while i < 100:
-            self.adb_cmd.screen_capture_save(src_path)
+            # self.adb_cmd.screen_capture_save(src_path)
             is_match_flag = self.is_match(src_path, des_path)
             if is_match_flag:  # 判断和目标des_path是否匹配
                 self.take_action(des_action)
@@ -259,6 +267,7 @@ class AutoArknights:
         return False
 
     def is_match(self, src_path, des_path):
+        self.adb_cmd.screen_capture_save(src_path)
         src = load_image_file(self.save_screen_path + src_path)
         des = load_image_file(self.save_screen_path + des_path)
         self.match_img.set_images(src, des)
@@ -275,11 +284,11 @@ class AutoArknights:
         time.sleep(3)
         # 2 进入主菜单
         # 2.1 点击”开始唤醒“
-        src = 'ark_start_btn_1.png'
-        des = 'ark_btn_start.png'
-        self.continue_action(src, des, action1=ActionType.CLICK_CENTER, action2=ActionType.CLICK,
-                             flag=self.Flag.NO_SATISFY_CONDITION)
-        print('点击‘开始唤醒’按钮')
+        # src = 'ark_start_btn_1.png'
+        # des = 'ark_btn_start.png'
+        # self.continue_action(src, des, action1=ActionType.CLICK_CENTER, action2=ActionType.CLICK,
+        #                      flag=self.Flag.NO_SATISFY_CONDITION)
+        # print('点击‘开始唤醒’按钮')
         # 2.2 判断是否成功进入主菜单，并关闭签到页、活动页
         src = 'ark_home_1.png'
         des = 'ark_tmpl_home.png'
@@ -287,7 +296,7 @@ class AutoArknights:
         self.continue_several_action(src, des, cond)
         print('成功进入主菜单')
 
-    def update_build(self):
+    def enter_build(self):
         """
         从主菜单页面进入基建并更换干员，但是只能从主菜单进入基建
         """
@@ -302,11 +311,12 @@ class AutoArknights:
         print('成功进入基建')
         # 领收益
         src = 'ark_build_reward.png'
-        des = 'ark_btn_build_notification.png'
-        self.adb_cmd.screen_capture_save(src)
+        des = 'ark_btn_build_notice.png'
+        # self.adb_cmd.screen_capture_save(src)
         flag = self.is_match(src, des)
         if flag:
             print('有基建通知图标')
+            self.take_action(ActionType.CLICK)
             des = 'ark_btn_make.png'
             self.continue_action(src, des, action1=ActionType.CLICK, flag=self.Flag.SATISFY_CONDITION)
             print('制造站收取完成')
@@ -316,10 +326,59 @@ class AutoArknights:
             des = 'ark_btn_trust.png'
             self.continue_action(src, des, action1=ActionType.CLICK, flag=self.Flag.SATISFY_CONDITION)
             print('干员信赖收取完成')
+            des = 'ark_btn_build_notice_2.png'
+            flag = self.is_match(src, des)
+            if flag:
+                self.take_action(ActionType.CLICK)
         else:
             print('无基建通知图标')
-        # todo 更换干员
-        print('正在更换干员')
+
+    def remove_last_build_hero(self):
+        """
+        点击匹配的最后一个撤下干员按钮。不会重新调用is_match()再匹配一遍，而是直接点击self.points的最后一个坐标
+        :return:
+        """
+        src = 'ark_build_hero.png'
+        # des = 'ark_btn_build_hero_remove_2.png'
+        # points = self.points  # 在self.is_match()那里，self.points可能会改变，需要提前保存个副本
+        # flag = self.is_match(src, des)
+        # if not flag:
+        #     return
+        if self.points is None or len(self.points) == 0:
+            return
+        self.take_action(ActionType.CLICK_LAST)
+        time.sleep(1)
+        points = self.points  # 在self.is_match()那里，self.points可能会改变，需要提前保存个副本
+        des = 'ark_btn_confirm.png'
+        # 处理”确认换下“弹框
+        flag = self.is_match(src, des)
+        if flag:
+            print('干员正在工作，确认换下')
+            self.continue_action(src, des, ActionType.CLICK, ActionType.NO_ACTION)
+        self.points = points
+        pass
+
+    def update_build_hero(self):
+        print('正在进入干员总览页面(基建内)')
+        src = 'ark_build.png'
+        des = 'ark_btn_build_hero.png'
+        self.continue_action(src, des, action2=ActionType.CLICK, flag=self.Flag.NO_SATISFY_CONDITION)
+        print('成功进入干员总览页面(基建内)')
+        print('正在撤下干员')
+        src = 'ark_build_hero.png'
+        des = 'ark_btn_build_hero_remove.png'
+        self.continue_action(src, des, action2=ActionType.CLICK, flag=self.Flag.NO_SATISFY_CONDITION)
+        des = 'ark_btn_build_hero_remove_2.png'
+        self.is_match(src, des)
+        self.remove_last_build_hero()
+        print('滑动一段距离')
+        self.take_action(ActionType.SWIPE_LAST_TO_FIRST)
+        while self.points is not None and len(self.points) > 0:
+            print('point', self.points)
+            self.remove_last_build_hero()
+            # self.take_action(ActionType.CLICK_LAST)
+            self.points = self.points[0: -1]
+            # time.sleep(0.5)
 
     def main(self):
         pass
@@ -331,7 +390,9 @@ def return_home():
 
 if __name__ == '__main__':
     auto = AutoArknights()
-    auto.enter_game()
+    # auto.enter_game()
+    # auto.enter_build()
+    auto.update_build_hero()
     # print(auto.is_match('ark_home_1.png', 'ark_btn_quit.png'))
     # load_image_file('./auto_arknights2/ark_home.png')
     # a = [1, 1, 1, 1, 1]
